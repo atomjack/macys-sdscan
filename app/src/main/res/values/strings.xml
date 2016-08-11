@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">SDScan</string>
+    <string name="begin_scan">Begin Scan</string>
+    <string name="files_scanned">Files Scanned:</string>
+</resources>
