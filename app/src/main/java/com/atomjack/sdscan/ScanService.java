@@ -1,5 +1,7 @@
 package com.atomjack.sdscan;
 
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.os.AsyncTask;
@@ -7,6 +9,8 @@ import android.os.Binder;
 import android.os.Environment;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
+import android.support.v4.app.NotificationCompat;
+import android.widget.RemoteViews;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -25,11 +29,16 @@ public class ScanService extends Service {
   private final IBinder binder = new ScanBinder();
   private ScanListener scanListener;
   private int filesScanned = 0;
+  private boolean shouldStop = false;
+  private boolean isScanning = false;
 
   private List<File> biggestFiles = new ArrayList<>();
   private int totalFileSize = 0;
   private SortedMap<String, Integer> fileExtensions = new TreeMap<>();
   private SortedSet<Map.Entry<String, Integer>> sortedExtensionSet;
+
+  private NotificationManager mNotifyMgr;
+  private static final int NOTIFICATION_ID = 123;
 
   @Nullable
   @Override
@@ -48,8 +57,17 @@ public class ScanService extends Service {
   }
 
   public void beginScan() {
+    if(mNotifyMgr == null)
+      mNotifyMgr = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+    showNotification();
+
+
+    isScanning = true;
+
     filesScanned = 0;
     biggestFiles.clear();
+    shouldStop = false;
     totalFileSize = 0;
     new AsyncTask<Void, Void, Void>() {
       @Override
@@ -57,34 +75,71 @@ public class ScanService extends Service {
         Filewalker fw = new Filewalker();
         fw.walk(Environment.getExternalStorageDirectory());
 
-        // Done scanning the sdcard. We now have an array of the top 10 biggest files, the total number of files scanned,
-        // the total size of all files scanned, and a list of all the extensions and their frequencies.
+        if(shouldStop) {
+          scanListener.onStopped();
+          shouldStop = false;
+        } else {
 
-        // Sort the list of extensions and remove all but the top 5
-        if(sortedExtensionSet == null) {
-          sortedExtensionSet = new TreeSet<>(
-                  new Comparator<Map.Entry<String, Integer>>() {
-                    @Override
-                    public int compare(Map.Entry<String, Integer> t0, Map.Entry<String, Integer> t1) {
-                      if(t0.getValue() > t1.getValue())
-                        return -1;
-                      if(t0.getValue() < t1.getValue())
-                        return 1;
-                      return 0;
-                    }
-                  }
-          );
-        }
-        sortedExtensionSet.clear();
-        sortedExtensionSet.addAll(fileExtensions.entrySet());
-        while(sortedExtensionSet.size() > 5) {
-          sortedExtensionSet.remove(sortedExtensionSet.last());
-        }
+          // Done scanning the sdcard. We now have an array of the top 10 biggest files, the total number of files scanned,
+          // the total size of all files scanned, and a list of all the extensions and their frequencies.
 
-        scanListener.onFinished(biggestFiles, totalFileSize / filesScanned, sortedExtensionSet);
+          // Sort the list of extensions and remove all but the top 5
+          if (sortedExtensionSet == null) {
+            sortedExtensionSet = new TreeSet<>(
+              new Comparator<Map.Entry<String, Integer>>() {
+                @Override
+                public int compare(Map.Entry<String, Integer> t0, Map.Entry<String, Integer> t1) {
+                  if (t0.getValue() > t1.getValue())
+                    return -1;
+                  if (t0.getValue() < t1.getValue())
+                    return 1;
+                  return 0;
+                }
+              }
+            );
+          }
+          sortedExtensionSet.clear();
+          sortedExtensionSet.addAll(fileExtensions.entrySet());
+          while (sortedExtensionSet.size() > 5) {
+            sortedExtensionSet.remove(sortedExtensionSet.last());
+          }
+          // Convert sorted set to a simple hashmap
+          List<Map<String, Integer>> extensionsMap = new ArrayList<>();
+          Iterator it = sortedExtensionSet.iterator();
+          while(it.hasNext()) {
+            final Map.Entry<String, Integer> item = (Map.Entry<String, Integer>)it.next();
+            extensionsMap.add(new HashMap<String, Integer>() {{ put(item.getKey(), item.getValue() );}});
+          }
+
+          scanListener.onFinished(biggestFiles, totalFileSize / filesScanned, extensionsMap);
+        }
+        mNotifyMgr.cancel(NOTIFICATION_ID);
+        isScanning = false;
         return null;
       }
     }.execute();
+  }
+
+  public void stopScan() {
+    shouldStop = true;
+  }
+
+  public boolean isScanning() {
+    return isScanning;
+  }
+
+  private void showNotification() {
+    RemoteViews remoteViews = new RemoteViews(getPackageName(), R.layout.scan_notification);
+    remoteViews.setImageViewResource(R.id.thumb, R.drawable.notification_icon);
+
+
+    NotificationCompat.Builder builder = new NotificationCompat.Builder(this)
+            .setSmallIcon(R.drawable.notification_icon)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .setContent(remoteViews);
+    Notification notification = builder.build();
+    mNotifyMgr.notify(NOTIFICATION_ID, notification);
   }
 
   class Filewalker {
@@ -92,6 +147,9 @@ public class ScanService extends Service {
       File[] list = root.listFiles();
 
       for(File f : list) {
+        if(shouldStop) {
+          return;
+        }
         if(f.isDirectory()) {
           walk(f);
         } else {

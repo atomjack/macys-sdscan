@@ -2,4 +2,10 @@
     <string name="app_name">SDScan</string>
     <string name="begin_scan">Begin Scan</string>
     <string name="files_scanned">Files Scanned:</string>
+    <string name="stop">Stop</string>
+    <string name="scanning_sdcard">Scanning SD Card</string>
+    <string name="ten_biggest_files">10 Biggest Files</string>
+    <string name="average_file_size">Average File Size:</string>
+    <string name="five_most_frequent_extensions">5 most frequent extensions:</string>
+    <string name="share">Share</string>
 </resources>
